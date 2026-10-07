@@ -1,0 +1,57 @@
+# Swift Package Manager: build e cache, anche nei package annidati
+.build/
+.swiftpm/
+
+# App compilata, distribuzioni e output locali
+/dist/
+/build/
+/Build/
+DerivedData/
+*.dSYM/
+*.xcarchive/
+*.xcresult/
+
+# Fotografie personali e campioni locali
+/media/
+
+# Xcode: stato e impostazioni personali
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100/
+.Trashes/
+
+# Editor: configurazione locale, file temporanei e backup
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Log, profiling e copertura generati
+*.log
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+/coverage/
+
+# Configurazioni locali e identita di firma
+.env
+.env.*
+!.env.example
+!.env.sample
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+
+# Package.swift e Package.resolved vanno versionati.
+# Sorgenti, test, documentazione e risorse dell'app restano inclusi.
