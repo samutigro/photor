@@ -32,6 +32,8 @@ public actor PhotoPipeline {
     private var direction = 1
     private var generation: UInt64 = 0
     private var navigation: UInt64 = 0
+    private var gridMode = false
+    private var backgroundPaused = false
     private var cache = ImageCache()
     private var queue = PriorityWorkQueue()
     private var failed: Set<CacheKey> = []
@@ -65,6 +67,7 @@ public actor PhotoPipeline {
     }
 
     public func open(_ folder: URL) async {
+        backgroundPaused = false
         generation &+= 1; navigation &+= 1
         let requestedGeneration = generation
         for job in jobs.values { job.cancellation.cancel() }
@@ -90,6 +93,36 @@ public actor PhotoPipeline {
         continuation.yield(.selected(index: index, navigation: navigation))
         showCurrent()
         rebuild()
+    }
+
+    public func setCatalog(_ photos: [PhotoAsset], context: URL, selected: PhotoID? = nil) {
+        backgroundPaused = false
+        generation &+= 1; navigation &+= 1
+        for job in jobs.values { job.cancellation.cancel() }
+        let valid = Set(photos.map(\.id))
+        cache.entries = cache.entries.filter { valid.contains($0.key.photo) }
+        assets = photos; failed.removeAll(); deferred.removeAll()
+        index = selected.flatMap { id in photos.firstIndex { $0.id == id } } ?? 0
+        queue.replace(with: [])
+        continuation.yield(.catalog(photos, folder: context))
+        continuation.yield(.selected(index: index, navigation: navigation))
+        showCurrent(); rebuild()
+    }
+
+    public func setGridMode(_ enabled: Bool) {
+        gridMode = enabled; rebuild()
+    }
+    public func invalidate(_ photo: PhotoID) {
+        cache.entries = cache.entries.filter { $0.key.photo != photo }
+        for job in jobs.values where job.request.asset.id == photo { job.cancellation.cancel() }
+    }
+    public func pauseBackground(_ pause: Bool) {
+        backgroundPaused = pause
+        if pause {
+            generation &+= 1
+            for job in jobs.values { job.cancellation.cancel() }
+            queue.replace(with: []); publishStatus(force: true)
+        } else { rebuild() }
     }
 
     public func configure(_ value: ViewerConfiguration) {
@@ -122,7 +155,8 @@ public actor PhotoPipeline {
 
     private func rebuild() {
         guard !assets.isEmpty else { publishStatus(force: true); return }
-        let plan = planner.plan(assets: assets, current: index, direction: direction, configuration: configuration)
+        let completePlan = planner.plan(assets: assets, current: index, direction: direction, configuration: configuration)
+        let plan = gridMode ? completePlan.filter { $0.request.asset.id == assets[index].id && !$0.request.representation.isFull } : completePlan
         priorities = Dictionary(uniqueKeysWithValues: plan.map { ($0.request.key, $0.priority) })
         let desired = Set(plan.filter { !$0.opportunistic }.map { $0.request.key })
         let allKeys = Set(plan.map { $0.request.key })
@@ -161,6 +195,7 @@ public actor PhotoPipeline {
     }
 
     private func pump() {
+        guard !backgroundPaused else { return }
         while jobs.count < 2, let planned = queue.pop() {
             let request = planned.request, key = request.key
             if planned.opportunistic, budget.snapshot.byCategory["Immagini", default: 0] >= budget.snapshot.limit * 11 / 20 {

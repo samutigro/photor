@@ -361,13 +361,18 @@ photor/
 │   ├── AppDependencies.swift      costruzione dei componenti
 │   ├── Features/Viewer/           interfaccia, modello e ponte Metal
 │   ├── Features/Settings/         preferenze
+│   ├── Features/Albums/           pulsanti, gestione, persistenza e filtri
+│   ├── Features/Grid/             griglia e salto numerico
+│   ├── Features/Files/            conferme, trasferimento e avanzamento
 │   ├── Platform/FolderAccess.swift
+│   ├── Platform/ViewState.swift   compatibilità State con i Command Line Tools
 │   ├── SmokeCheck.swift           verifica decoder e texture sui file reali
+│   ├── FeatureSmokeCheck.swift    nuove funzioni su 1005 JPEG temporanei
 │   └── UISmokeCheck.swift         verifica automatica della finestra
 ├── Packages/PhotorKit/
 │   ├── Package.swift              tre librerie e programma delle verifiche
 │   ├── Sources/
-│   │   ├── PhotorCore/            Models, Catalog, Pipeline, Cache, Prefetch
+│   │   ├── PhotorCore/            Models, Catalog, Pipeline, Cache, Prefetch, Albums, Files
 │   │   ├── PhotorDecoders/        ImageIODecoder, RAWDecoder, DecoderRegistry
 │   │   └── PhotorRendering/       viste Metal, cache, viewport e shader
 │   └── Tests/PhotorCoreTests/     controlli autonomi, senza framework di test esterni
@@ -398,4 +403,60 @@ Il package delle verifiche usa un eseguibile autonomo perché i Command Line Too
 - La navigazione da cache evita lettura, decodifica e upload nel percorso immediato. Aprire una foto ancora fuori cache richiede comunque lavoro.
 - Il riempimento della cartella è progressivo e subordinato al budget; una cartella molto grande non entra magicamente tutta in RAM.
 - I controlli automatici usano i due campioni e fixture sintetiche. Non sostituiscono una misura prolungata su una cartella reale di centinaia di scatti.
-- Questa versione visualizza foto: non modifica, cancella, esporta o sviluppa i file originali sul disco.
+- Visualizzazione e album non cambiano gli originali. Le azioni esplicite Cestino, Copia e Sposta lavorano sui file; non modificano i pixel.
+
+## 12. Album, griglia e file — versione 0.2
+
+Le nuove funzioni riusano lo stesso motore di visualizzazione. Il Core continua a non conoscere SwiftUI o AppKit.
+
+```text
+Clic su stella / icona
+  → AlbumButtons → ViewerModel+Albums → AlbumLibrary
+  → AlbumStore → JSONEncoder → scrittura atomica Foundation → filesystem / SSD
+
+Apri un album
+  → AlbumMenu → ViewerModel+Albums → AlbumLibrary.resolve
+  → URL legge i metadati dei percorsi salvati → lista ordinata di PhotoAsset
+  → PhotoPipeline.setCatalog → stessa pipeline decoder / cache / Metal di prima
+
+Apri la griglia e scorri
+  → PhotoGrid / LazyVGrid → celle visibili → ThumbnailCache
+  → DecodeExecutor → DecoderRegistry → ImageIO (anche anteprima RAF)
+  → CGImage da massimo 512 pixel → cache con MemoryLease → immagine SwiftUI
+
+Premi Cestino e conferma
+  → ViewerModel+Files → PhotoFileService → controllo aggiornato del file
+  → FileManager.trashItem → Cestino macOS
+  → rimozione dei percorsi dagli album → salvataggio → nuovo catalogo
+
+Trasferisci un album
+  → AlbumTransferView → FolderAccess / NSOpenPanel → destinazione
+  → ViewerModel+Files → PhotoFileService → un file alla volta
+  → FileManager.copyItem oppure moveItem → filesystem / SSD
+  → risultato per file → progressione nell’interfaccia
+  → se spostato: aggiorna tutti gli album → salvataggio → file successivo
+  → rapporto finale → aggiornamento catalogo e cache
+```
+
+| Componente, in una parola | Cos’è | Dipende da | Relazione e azione concreta |
+|---|---|---|---|
+| AlbumButtons / AlbumMenu / AlbumManagerView — Comandi | Le viste per classificare e aprire le raccolte | SwiftUI e ViewerModel | Inviano aggiungi/rimuovi, crea, rinomina e apri; il modello restituisce icone, nomi e conteggi. |
+| ViewerModel+Albums — Regia | La parte del modello dedicata agli album | AlbumLibrary, AlbumStore e PhotoPipeline | Cambia appartenenze, salva e sostituisce il catalogo con la lista dell’album scelto. |
+| PhotoAlbum / AlbumLibrary — Elenco | Strutture di dati senza pixel | UUID, String, Set e URL di Foundation | Ogni album contiene un identificativo stabile, nome, icona e insieme di percorsi; controlla nomi e limite di quattro custom. |
+| AlbumStore — Persistenza | Un actor che legge e salva l’archivio | Codable, JSONEncoder/Decoder, Data e FileManager | Serializza su disco e impedisce a un salvataggio vecchio di sostituirne uno più recente; un archivio illeggibile non viene sovrascritto automaticamente. |
+| PhotoGrid / ThumbnailCell — Mosaico | Griglia adattiva di riquadri quadrati | SwiftUI, PhotoAsset e ThumbnailCache | Richiede le miniature per le celle mostrate, annulla i lavori delle celle uscite e passa al visualizzatore quando clicchi. |
+| JumpToPhotoView — Salto | Un campo numerico | ViewerModel e ScrollViewReader | Controlla 1…totale, cambia selezione e porta la griglia al riquadro corrispondente. |
+| ThumbnailCache — Miniature | Cache separata dalle immagini grandi | Decoder, DecodeExecutor, MemoryBudget, CacheKey | Usa due worker, precedenza alle richieste più recenti, massimo 512 pixel e rimuove le miniature meno usate. |
+| AlbumTransferView — Destinazione | La finestra Copia/Sposta | SwiftUI, FolderAccess e ViewerModel | Mostra destinazione, effetto dell’operazione, conferma dello spostamento, avanzamento e file falliti. |
+| ViewerModel+Files — Operazione | Il coordinamento delle modifiche ai file | PhotoFileService, album e pipeline | Sospende il precaching, riceve gli esiti, aggiorna i percorsi e rilegge la raccolta. |
+| PhotoFileService — Trasporto | Servizio senza interfaccia per singoli file e lotti | FileManager, URL, FileRevision e CancellationFlag | Rilegge dimensione/data senza metadati in cache, rifiuta sorgenti cambiate, sceglie nomi liberi, copia/sposta oppure usa il Cestino. |
+| TransferUpdate / TransferReport — Esito | Dati immutabili passati tra background e UI | URL, contatori e messaggi | Distinguono successi e fallimenti; permettono di annullare tra due file senza fingere che quelli già trasferiti siano tornati indietro. |
+| ViewState — Compatibilità | Un alias del tipo SwiftUI.State | SwiftUI | Evita che l’SDK macOS 27 scelga l’omonima macro senza plugin nei Command Line Tools; il comportamento resta quello del normale property wrapper. |
+
+I percorsi degli album sono un `Set<String>`: aggiungere, togliere e verificare appartenenze costa mediamente O(1), senza duplicati. L’array del catalogo serve invece a mantenere ordine e indice. Gli album conservano solo riferimenti, quindi mille stelle non duplicano mille fotografie in RAM o su disco.
+
+La cache miniature punta a un massimo di 256 MiB o un sedicesimo del budget globale, se inferiore; le celle ancora visibili trattengono le proprie immagini. Anche i due lavori delle miniature prenotano memoria nello stesso budget. In griglia la pipeline principale prepara solo la preview della selezione, mentre mette in pausa il precaching delle immagini grandi. Tornando alla foto lo riattiva. Il limite di due worker vale per ciascuna coda: lavori della vecchia vista già avviati possono terminare durante il passaggio.
+
+Il trasferimento gira fuori dal MainActor. I comandi che cambiano raccolta e i trasferimenti simultanei sono disabilitati fino alla conclusione. Annulla si ferma dopo il file in corso; chiudere l’app durante l’operazione viene impedito. Se il salvataggio dei nuovi percorsi fallisce, lo spostamento si ferma dopo il file corrente e mostra l’errore; il modello conserva i riferimenti aggiornati per riprovare il salvataggio.
+
+Gli album vengono salvati dopo ogni spostamento riuscito. File e JSON sono due operazioni distinte: un arresto improvviso tra lo spostamento fisico e il salvataggio può lasciare un riferimento al vecchio percorso. Non c’è ancora un giornale di recupero per questo intervallo. L’eliminazione passa esclusivamente dal Cestino del sistema; se macOS non riesce a cestinare, Photor mostra l’errore e non tenta una cancellazione definitiva.

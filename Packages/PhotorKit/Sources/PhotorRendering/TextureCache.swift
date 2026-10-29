@@ -20,9 +20,11 @@ public final class TextureFrame: @unchecked Sendable {
     public let sourceSize: PixelSize
     public let embeddedPreview: Bool
     private let lease: MemoryLease
-    init(key: CacheKey, texture: any MTLTexture, sourceSize: PixelSize, embeddedPreview: Bool, lease: MemoryLease) {
+    private let additionalLease: MemoryLease?
+    init(key: CacheKey, texture: any MTLTexture, sourceSize: PixelSize, embeddedPreview: Bool, lease: MemoryLease, additionalLease: MemoryLease? = nil) {
         self.key = key; self.texture = texture; self.sourceSize = sourceSize
         self.embeddedPreview = embeddedPreview; self.lease = lease
+        self.additionalLease = additionalLease
     }
 }
 
@@ -60,7 +62,7 @@ public actor TextureCache {
         while budget.snapshot.limit - budget.snapshot.used < estimated * 2, evictOne() {}
         guard let lease = budget.reserve(estimated, category: "Texture"),
               let staging = budget.reserve(image.decoded.byteCount, category: "Upload") else { throw PhotoError.memory }
-        let device = self.device, uploads = self.uploads, requestEpoch = epoch
+        let device = self.device, uploads = self.uploads, budget = self.budget, requestEpoch = epoch
         let work = Task<TextureFrame, Error> {
             defer { staging.release() }
             return try await withCheckedThrowingContinuation { continuation in
@@ -73,13 +75,20 @@ public actor TextureCache {
                             let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm_srgb,
                                 width: bitmap.width, height: bitmap.height, mipmapped: false)
                             descriptor.usage = .shaderRead; descriptor.storageMode = .shared
-                            guard let texture = device.makeTexture(descriptor: descriptor), texture.allocatedSize <= lease.bytes else {
+                            guard let texture = device.makeTexture(descriptor: descriptor) else {
                                 throw PhotoError.memory
+                            }
+                            // A standalone texture can occupy more than the heap-size estimate.
+                            // Account for the actual allocation before retaining or uploading it.
+                            var extra: MemoryLease?
+                            if texture.allocatedSize > lease.bytes {
+                                guard let additional = budget.reserve(texture.allocatedSize - lease.bytes, category: "Texture") else { throw PhotoError.memory }
+                                extra = additional
                             }
                             texture.replace(region: MTLRegionMake2D(0, 0, bitmap.width, bitmap.height), mipmapLevel: 0,
                                 withBytes: pointer, bytesPerRow: bitmap.bytesPerRow)
                             return .success(TextureFrame(key: image.key, texture: texture, sourceSize: image.decoded.sourceSize,
-                                embeddedPreview: image.decoded.isEmbeddedPreview, lease: lease))
+                                embeddedPreview: image.decoded.isEmbeddedPreview, lease: lease, additionalLease: extra))
                         } catch { return .failure(error) }
                     }
                     continuation.resume(with: result)

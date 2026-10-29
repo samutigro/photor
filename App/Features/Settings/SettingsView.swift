@@ -3,9 +3,9 @@ import PhotorCore
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var memory: Double
-    @State private var radius: Int
-    @State private var fill: Bool
+    @ViewState<Double> private var memory: Double
+    @ViewState<Int> private var radius: Int
+    @ViewState<Bool> private var fill: Bool
     private let original: ViewerConfiguration
     let apply: (ViewerConfiguration) -> Void
     init(configuration: ViewerConfiguration, apply: @escaping (ViewerConfiguration) -> Void) {

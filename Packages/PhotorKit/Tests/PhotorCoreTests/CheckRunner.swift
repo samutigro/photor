@@ -29,7 +29,13 @@ struct CheckRunner {
             print("PASS catalogo, ordinamento naturale, EXIF, ridimensionamento e colore")
             try await PipelineTests().folderSwitchRejectsOldResultsAndLimitsWorkers()
             print("PASS cambio cartella durante la decodifica e limite di due worker")
-            print("5 gruppi di verifiche superati")
+            try await AlbumTests().persistenceMembershipAndLimits()
+            print("PASS album: persistenza, limite, appartenenza, spostamento e salvataggi fuori ordine")
+            try await FileTests().transferCollisionCancellationAndFailure()
+            print("PASS file: copie integre, omonimi, spostamento parziale, annullamento e file modificati")
+            try await ThumbnailTests().boundedWorkersAndCancellation()
+            print("PASS miniature: due worker, cancellazione e rilascio della memoria")
+            print("8 gruppi di verifiche superati")
         } catch { print("FAIL \(error)"); exit(1) }
     }
 }

@@ -3,11 +3,12 @@ import AppKit
 @MainActor
 final class FolderAccess {
     private var active: URL?
-    func choose() async -> URL? {
+    func choose(title: String = "Scegli una cartella di foto", prompt: String = "Apri cartella") async -> URL? {
         let panel = NSOpenPanel()
-        panel.title = "Scegli una cartella di foto"
+        panel.title = title
         panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false; panel.prompt = "Apri cartella"
+        panel.allowsMultipleSelection = false; panel.prompt = prompt
+        panel.canCreateDirectories = true
         return await withCheckedContinuation { continuation in
             panel.begin { response in continuation.resume(returning: response == .OK ? panel.url : nil) }
         }

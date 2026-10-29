@@ -10,11 +10,14 @@ final class AppDependencies {
     let pipeline: PhotoPipeline
     let textures: TextureCache
     let renderer: MetalRenderer
+    let thumbnails: ThumbnailCache
     let presentations = PresentationCache()
     init(configuration: ViewerConfiguration) throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw RenderingError.unavailable }
         budget = MemoryBudget(limit: configuration.memoryLimit)
-        pipeline = PhotoPipeline(decoder: DecoderRegistry(), configuration: configuration, budget: budget)
+        let decoder = DecoderRegistry()
+        pipeline = PhotoPipeline(decoder: decoder, configuration: configuration, budget: budget)
+        thumbnails = ThumbnailCache(decoder: decoder, budget: budget)
         textures = TextureCache(device: device, budget: budget)
         renderer = try MetalRenderer(device: device)
     }

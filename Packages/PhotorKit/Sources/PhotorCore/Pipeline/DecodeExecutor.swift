@@ -2,10 +2,10 @@ import Foundation
 
 public final class DecodeExecutor: Sendable {
     private let queue: OperationQueue
-    public init(concurrency: Int = 2) {
+    public init(concurrency: Int = 2, qualityOfService: QualityOfService = .userInitiated) {
         queue = OperationQueue()
         queue.name = "Photor.decode"
-        queue.qualityOfService = .userInitiated
+        queue.qualityOfService = qualityOfService
         queue.maxConcurrentOperationCount = concurrency
     }
     public func decode(_ request: DecodeRequest, using decoder: any PhotoDecoder,

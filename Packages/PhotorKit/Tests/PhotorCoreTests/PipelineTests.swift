@@ -45,7 +45,7 @@ struct PipelineTests {
     }
 }
 
-private final class SlowDecoder: PhotoDecoder, @unchecked Sendable {
+final class SlowDecoder: PhotoDecoder, @unchecked Sendable {
     private let lock = NSLock()
     private var active = 0
     private var maximum = 0
